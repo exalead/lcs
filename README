@@ -1,0 +1,65 @@
+LCS readme file
+
+What the library does
+---------------------
+
+LCS is an implementation of the Long Common Strings algorithm (Jon Bentley
+and Douglas McIlroy), created by Exalead SA.
+
+The purpose of the algorithm is to compress efficiently large chunks of data
+with common parts, that can not be compressed efficiently with standard
+compressors such as zlib (because of the small compression window used)
+
+Stream description
+------------------
+
+The LCS compressed stream is made of escaped bytes for uncompressed data, and
+commands to repeat previous produced data. Note that repeat commands can
+duplicate any previously produced data, from the begining. Repeat commands can
+also overlap themselves (see below). There is no header to identify the stream
+itself. The end of stream is identified by an empty repeat command (see below).
+
+The stream is to be processed on a byte basis:
+
+0x00 to 0xfd and 0xff : regular uncompressed data byte
+0xfe : escape sequence ; the next byte can be:
+     0xfe : produce the uncompressed data byte 0xfe
+     any other value : repeat command
+
+Repeat commands begins with 0xfe, followed by two ref-encoded numbers (see
+ref-encoding below [1]). The first number is the modified offset (see [2]),
+encoding the begining of the repeating chunk, relative to the begining of the
+uncompressed stream. The second number is the length of the chunk in bytes. If
+both offset and length are zero, the command identify the end of the stream. A
+zero length with a non-zero offset is illegal and must be considered as a
+stream error.
+
+Example: command to repeat a chunk of 42 bytes, starting from position 1234:
+0xfe, 0x92, 0x13, 0x2a
+
+Repeat commands can overlap themselves ; in the previous example, if the
+repeat command starts at position 1235 (that is, one byte after the begining
+of the chunk), produced data will be byte 1234 repeated 42 times. Hence the
+begining of chunk can be any positive value strictly lower than the curent
+position.
+
+[1] Ref-encoding: one or more bytes, encoding 7 bits of data, little endian
+(lowest bits are encoded first). The 8th bit is a continuation bit ; when set
+to 1, the decoding must continue.
+
+Example: decimal 1234 (0x4d2 or 0b100f11010010) is encoded as 0xd2, 0x09
+(0b11010010,0b10001001)
+
+[2] Modified ref-encoding: the encoded number if first modified to fit with
+the double 0xfe escaping: bits 0 to 5 are kept, but bits starting from
+position 6 are shited to the left by one bit position.
+
+Example: the offset 1234 (0x4d2 or 0b10011010010) is modified to 2450
+(0x992 or 0b100110010010), and is ref-encoded as 0x92, 0x13 (0b10010010,
+0b00010011)
+
+Remarks
+-------
+
+The compressed stream will generally be efficiently post-compressed by a
+standard windowed compressor, such as zlib or equivalent.
